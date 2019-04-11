@@ -1,33 +1,19 @@
 const YOUTUBE_VIDEO_INFO_URL: &str = "https://www.youtube.com/get_video_info";
 
+use futures::{future::Future, stream::Stream};
 use crate::errors::*;
 use std::collections::HashMap;
 use url::Url;
 
-pub fn get_video_info_from_string(value: &str) -> Result<VideoInfo> {
-    let parse_url = value.parse::<Url>()?;
-
-    if parse_url.host_str() == Some("youtu.be") {
-        unimplemented!("get video from short url");
-        // return get_video_info_from_short_url(&parse_url);
-    }
-
-    get_video_info_from_url(&parse_url)
-}
-
-fn get_video_info_from_url(u: &Url) -> Result<VideoInfo> {
-    unimplemented!()
-}
-
-fn get_video_info(id: &str) -> Result<()> {
+pub fn get_video_info(id: &str) -> Box<dyn Future<Item=VideoInfo, Error=Error> + Send> {
     let info_url = format!("{}?video_id={}", YOUTUBE_VIDEO_INFO_URL, id);
 
-    let mut resp = crate::hyper_https::get_client().get(info_url.parse::<hyper::Uri>()?);
-//    if resp.status() != hyper::StatusCode(200) {
-//        bail!("video info response invalid status code");
-//    }
+    let what = try_future!(info_url.parse::<hyper::Uri>());
 
-    unimplemented!()
+    Box::new(crate::hyper_https::fetch_content(what).map(|content| {
+        println!("{:?}", parse_query(&content));
+        VideoInfo{}
+    }).map_err(|e| e.into()))
 }
 
 pub fn get_id_from_string(s: &str) -> Result<String> {
@@ -43,9 +29,7 @@ fn get_id_from_url(u: &Url) -> Result<String> {
 
 fn parse_query(query_str: &str) -> HashMap<String, String> {
     let parse_query = url::form_urlencoded::parse(query_str.as_bytes());
-    return parse_query
-        .into_owned()
-        .collect::<HashMap<String, String>>();
+    return parse_query.into_owned().collect::<HashMap<String, String>>();
 }
 
 pub struct VideoInfo {}
