@@ -1,7 +1,5 @@
-use futures::future::{err, Future};
-use hyper::client::connect::{Connect, Connected, Destination};
-use hyper::client::HttpConnector;
-use hyper::Client;
+use futures::{future::{err, Future}, stream::Stream};
+use hyper::{Client, client::{HttpConnector, connect::{Connect, Connected, Destination}}};
 use std::io;
 use std::sync::Arc;
 use tokio::net::TcpStream;
@@ -17,6 +15,18 @@ pub fn get_client() -> Client<HttpsConnector> {
     Client::builder().build(connector)
 }
 
+pub fn fetch_content(url: hyper::Uri) -> impl Future<Item=String, Error=hyper::error::Error> {
+    let client = get_client();
+
+    client.get(url)
+        .and_then(|res| {
+            res.into_body().concat2()
+        })
+        .map(|body| {
+            String::from_utf8_lossy(&body).into_owned()
+        })
+}
+
 pub struct HttpsConnector {
     tls: Arc<TlsConnector>,
     http: HttpConnector,
@@ -25,7 +35,7 @@ pub struct HttpsConnector {
 impl Connect for HttpsConnector {
     type Transport = TlsStream<TcpStream>;
     type Error = io::Error;
-    type Future = Box<Future<Item = (Self::Transport, Connected), Error = Self::Error> + Send>;
+    type Future = Box<Future<Item=(Self::Transport, Connected), Error=Self::Error> + Send>;
 
     fn connect(&self, dst: Destination) -> Self::Future {
         if dst.scheme() != "https" {

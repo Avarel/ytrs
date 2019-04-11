@@ -1,5 +1,3 @@
-use hyper::rt::{Future, Stream};
-
 #[macro_use]
 extern crate error_chain;
 
@@ -25,18 +23,6 @@ fn main() {
     }
 
     let mut runtime = tokio::runtime::Runtime::new().expect("Unable to create a runtime");
-    let s = runtime.block_on(fetch_url(url)).unwrap();
+    let s = runtime.block_on(hyper_https::fetch_content(url)).unwrap();
     println!("{}", s);
-}
-
-fn fetch_url(url: hyper::Uri) -> impl Future<Item=String, Error=hyper::error::Error> {
-    let client = hyper_https::get_client();
-
-    client.get(url)
-        .and_then(|res| {
-            res.into_body().concat2()
-        })
-        .map(|body| {
-            String::from_utf8_lossy(&body).into_owned()
-        })
 }

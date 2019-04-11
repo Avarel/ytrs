@@ -1,6 +1,7 @@
 const YOUTUBE_VIDEO_INFO_URL: &str = "https://www.youtube.com/get_video_info";
 
 use crate::errors::*;
+use std::collections::HashMap;
 use url::Url;
 
 pub fn get_video_info_from_string(value: &str) -> Result<VideoInfo> {
@@ -38,6 +39,13 @@ fn get_id_from_url(u: &Url) -> Result<String> {
         return Ok(video_id.1.into_owned());
     }
     bail!("YouTube video id not found")
+}
+
+fn parse_query(query_str: &str) -> HashMap<String, String> {
+    let parse_query = url::form_urlencoded::parse(query_str.as_bytes());
+    return parse_query
+        .into_owned()
+        .collect::<HashMap<String, String>>();
 }
 
 pub struct VideoInfo {}
