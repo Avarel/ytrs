@@ -8,6 +8,7 @@ mod hyper_https;
 
 mod video_info;
 
+
 fn main() {
     let url_str = match std::env::args().nth(1) {
         Some(url) => url,
@@ -30,3 +31,4 @@ fn main() {
     let s = runtime.block_on(hyper_https::fetch_content(url)).unwrap();
     println!("{}", s);
 }
+

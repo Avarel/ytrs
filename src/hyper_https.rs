@@ -1,7 +1,8 @@
-use futures::{future::{err, Future}, stream::Stream};
-use hyper::{Client, client::{HttpConnector, connect::{Connect, Connected, Destination}}};
 use std::io;
 use std::sync::Arc;
+
+use futures::{future::{err, Future}, stream::Stream};
+use hyper::{Client, client::{connect::{Connect, Connected, Destination}, HttpConnector}};
 use tokio::net::TcpStream;
 use tokio_tls::{TlsConnector, TlsStream};
 
