@@ -17,7 +17,20 @@ fn main() {
             return;
         }
     };
+    let download = std::env::args().nth(1).map(|s| s == "download").unwrap_or(false);
 
+    if download {
+        let link = "XXXX";
+        let url = link.parse::<hyper::Uri>().unwrap();
+        let mut runtime = tokio::runtime::Runtime::new().expect("Unable to create a runtime");
+        let result = runtime.block_on(hyper_https::download_to_file("what.webm", url));
+        match result {
+            Ok(()) => println!("Finished!"),
+            Err(msg) => println!("Error: {}", msg),
+        }
+        return;
+    }
+    
     let url = url_str.parse::<hyper::Uri>().unwrap();
 
     if let Some(id) = video_info::get_id_from_string(&url.to_string()).ok() {
