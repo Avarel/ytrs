@@ -10,9 +10,7 @@ pub fn get_video_info(id: &str) -> impl Future<Item=VideoInfo, Error=Error> {
 
     crate::hyper_https::fetch_content(info_url.parse().unwrap()).map(|content| {
         dump_to_file("dump2.json", &serde_json::to_string_pretty(&serde_urlencoded::from_str::<serde_json::Value>(&content).unwrap()).unwrap());
-        let v: VideoInfo = serde_urlencoded::from_str(&content).unwrap();
-        dump_to_file("dump.json", &serde_json::to_string_pretty(&v).unwrap());
-        v
+        serde_urlencoded::from_str(&content).unwrap()
     }).map_err(|e| e.into())
 }
 
@@ -61,7 +59,7 @@ pub struct AdaptiveFormat {
     url: String
 }
 
-fn dump_to_file(file_name: &str, text: &str) {
+pub fn dump_to_file(file_name: &str, text: &str) {
     use std::io::Write;
     let mut file = std::fs::OpenOptions::new()
             .write(true)

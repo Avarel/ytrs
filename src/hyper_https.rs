@@ -56,6 +56,38 @@ pub fn download_to_file(file_name: &str, url: hyper::Uri) -> impl Future<Item=()
         })
 }
 
+pub async fn async_download_to_file(file_name: &str, url: hyper::Uri) -> Result<(), crate::errors::Error> {
+    use tokio::prelude::*;
+
+    let res = await!(open_stream(url))?;
+
+    if res.status() != 200 {
+        bail!("Failed to connect, status: {}", res.status());
+    } else {
+        println!("Connected! Status: {}", res.status());
+    }
+
+    let mut file = await!(tokio::fs::File::create(file_name.to_owned()))?;
+    
+    let len = res.headers().get(hyper::header::CONTENT_LENGTH).unwrap().to_str().unwrap().parse::<u64>().unwrap();
+
+    let pb = indicatif::ProgressBar::new(len);
+            pb.enable_steady_tick(100);
+            pb.set_style(indicatif::ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+                .progress_chars("#>-"));
+
+    let mut body = res.into_body();
+
+    while let Some(chunk) = await!(body.next()) {
+        let chunk = chunk?;
+        pb.inc(chunk.len() as u64);
+        await!(tokio_io::io::write_all(&mut file, chunk))?;
+    }
+
+    Ok(())
+}
+
 pub fn open_stream(url: hyper::Uri) -> hyper::client::ResponseFuture {
     let client = get_client();
     client.get(url)
