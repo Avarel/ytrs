@@ -26,36 +26,6 @@ pub fn fetch_content(url: hyper::Uri) -> impl Future<Item=String, Error=hyper::e
         })
 }
 
-pub fn download_to_file(file_name: &str, url: hyper::Uri) -> impl Future<Item=(), Error=crate::errors::Error> {
-    let response_future = open_stream(url).map_err(|e| e.into());
-
-    let create_file_future =
-        tokio::fs::File::create(file_name.to_owned()).map_err(|e| e.into());
-
-    response_future
-        .join(create_file_future)
-        .and_then(move |(res, file)| {
-            let len = res.headers().get(hyper::header::CONTENT_LENGTH).unwrap().to_str().unwrap().parse::<u64>().unwrap(); //RUST IN A NUTSHELL
-            
-            let pb = indicatif::ProgressBar::new(len);
-            pb.enable_steady_tick(500);
-            pb.set_style(indicatif::ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-                .progress_chars("#>-"));
-
-            res.into_body()
-                .map_err(|e| e.into())
-                .fold(file, move |file, chunk| {
-                    pb.inc(chunk.len() as u64);
-
-                    tokio_io::io::write_all(file, chunk)
-                        .map(|(f, _c)| f)
-                        .map_err(|e| crate::errors::Error::from(e)) //compiler explodes if I use e.into() what the heck?!
-                })
-                .map(drop)
-        })
-}
-
 pub async fn async_download_to_file(file_name: &str, url: hyper::Uri) -> Result<(), crate::errors::Error> {
     use tokio::prelude::*;
 

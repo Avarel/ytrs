@@ -30,10 +30,10 @@ fn main() {
                 let mut runtime = tokio::runtime::Runtime::new().expect("Unable to create a runtime");
                 let v = runtime.block_on(video_info::get_video_info(&id)).unwrap();
                 video_info::dump_to_file("dump.json", &serde_json::to_string_pretty(&v).unwrap());
-                return;
             } else {
                 println!("id not discovered");
             }
+            return;
         }
         Some(url) => {
             let url = url.parse::<hyper::Uri>().unwrap();
