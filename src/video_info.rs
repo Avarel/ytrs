@@ -34,7 +34,7 @@ pub struct VideoInfo {
     author: String,
     length_seconds: u64,
     thumbnail_url: String,
-    #[serde(deserialize_with = "from_str")]
+    #[serde(deserialize_with = "json_string")]
     player_response: PlayerResponse,
 }
 
@@ -68,18 +68,10 @@ pub fn dump_to_file(file_name: &str, text: &str) {
     file.write(text.as_bytes()).unwrap();
 }
 
-fn from_str<'de, T, D>(deserializer: D) -> std::result::Result<T, D::Error>
-    where T: std::str::FromStr,
-          T::Err: std::fmt::Display,
+fn json_string<'de, T, D>(deserializer: D) -> std::result::Result<T, D::Error>
+    where T: serde::Deserialize<'de>,
           D: serde::de::Deserializer<'de>
 {
-    let s = String::deserialize(deserializer)?;
-    T::from_str(&s).map_err(serde::de::Error::custom)
-}
-
-impl std::str::FromStr for PlayerResponse {
-    type Err = serde_json::Error;
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        serde_json::from_str(s)
-    }
+    let s = <&str>::deserialize(deserializer)?;
+    serde_json::from_str::<T>(s).map_err(serde::de::Error::custom)
 }
