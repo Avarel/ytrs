@@ -47,11 +47,12 @@ pub struct PlayerResponse {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct StreamingData {
     #[serde(rename = "adaptiveFormats")]
-    adaptive_formats: Vec<AdaptiveFormat>
+    adaptive_formats: Vec<Format>,
+    formats: Vec<Format>
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct AdaptiveFormat {
+pub struct Format {
     itag: u16,
     #[serde(rename = "mimeType")]
     mime_type: String,

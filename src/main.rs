@@ -1,4 +1,4 @@
-#![feature(await_macro, async_await, futures_api)]
+#![feature(await_macro, async_await)]
 
 // This pulls in the `tokio-async-await` crate. While Rust 2018 doesn't require
 // `extern crate`, we need to pull in the macros.
