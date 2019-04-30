@@ -27,9 +27,11 @@ fn main() {
 
             if let Some(id) = video_info::get_id_from_string(&url.to_string()).ok() {
                 println!("Discovered youtube id {:?}", id);
-                let mut runtime = tokio::runtime::Runtime::new().expect("Unable to create a runtime");
-                let v = runtime.block_on(video_info::get_video_info(&id)).unwrap();
-                video_info::dump_to_file("dump.json", &serde_json::to_string_pretty(&v).unwrap());
+                tokio::run_async(async move {
+                    let v = await!(video_info::get_video_info(&id)).unwrap();
+                    video_info::dump_to_file("dump.json", &serde_json::to_string_pretty(&v).unwrap());
+                });
+
             } else {
                 println!("id not discovered");
             }
@@ -38,9 +40,10 @@ fn main() {
         Some(url) => {
             let url = url.parse::<hyper::Uri>().unwrap();
 
-            let mut runtime = tokio::runtime::Runtime::new().expect("Unable to create a runtime");
-            let s = runtime.block_on(hyper_https::fetch_content(url)).unwrap();
-            println!("{}", s);
+            tokio::run_async(async {
+                let s = await!(hyper_https::fetch_content(url)).unwrap();
+                println!("{}", s);
+            })
         }
         None => {
             println!("Usage: download | grab <url> | <url>");

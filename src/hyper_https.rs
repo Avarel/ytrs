@@ -17,14 +17,10 @@ pub fn get_client() -> Client<HttpsConnector> {
     Client::builder().build(connector)
 }
 
-pub fn fetch_content(url: hyper::Uri) -> impl Future<Item=String, Error=hyper::error::Error> {
-    get_response_async(url)
-        .and_then(|res| {
-            res.into_body().concat2()
-        })
-        .map(|body| {
-            String::from_utf8_lossy(&body).into_owned()
-        })
+pub async fn fetch_content(url: hyper::Uri) -> Result<String, hyper::error::Error> {
+    let res = await!(get_response_async(url))?;
+    let s = await!(res.into_body().concat2())?;
+    Ok(String::from_utf8_lossy(&s).into_owned())
 }
 
 pub async fn async_download_to_file(file_name: &str, url: hyper::Uri) -> Result<(), crate::errors::Error> {

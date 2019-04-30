@@ -5,13 +5,12 @@ use crate::errors::*;
 
 const YOUTUBE_VIDEO_INFO_URL: &str = "https://www.youtube.com/get_video_info";
 
-pub fn get_video_info(id: &str) -> impl Future<Item=VideoInfo, Error=Error> {
+pub async fn get_video_info(id: &str) -> Result<VideoInfo> {
     let info_url = format!("{}?video_id={}", YOUTUBE_VIDEO_INFO_URL, id);
-
-    crate::hyper_https::fetch_content(info_url.parse().unwrap()).map(|content| {
-        dump_to_file("dump2.json", &serde_json::to_string_pretty(&serde_urlencoded::from_str::<serde_json::Value>(&content).unwrap()).unwrap());
-        VideoInfo::from_json(serde_urlencoded::from_str(&content).unwrap()).unwrap()
-    }).map_err(|e| e.into())
+    let content = await!(crate::hyper_https::fetch_content(info_url.parse().unwrap()))?;
+    dump_to_file("dump2.json", &serde_json::to_string_pretty(&serde_urlencoded::from_str::<serde_json::Value>(&content).unwrap()).unwrap());
+    let info = VideoInfo::from_json(serde_urlencoded::from_str(&content).unwrap()).unwrap();
+    Ok(info)
 }
 
 pub fn get_id_from_string(s: &str) -> Result<String> {
@@ -167,7 +166,14 @@ impl VideoDetails {
         let title = json["title"].as_str().unwrap().to_owned();
         let author = json["author"].as_str().unwrap().to_owned();
         let average_rating = json["averageRating"].as_f64().unwrap() as f32;
-        let keywords = serde_json::from_value::<Vec<String>>(json["keywords"].clone()).unwrap();
+
+        let keywords_json = json["keywords"].clone();
+        let keywords = if keywords_json.is_null() {
+            Vec::new()
+        } else {
+            serde_json::from_value::<Vec<String>>(keywords_json).unwrap()
+        };
+
         let short_description = json["shortDescription"].as_str().unwrap().to_owned();
 
         Self {
