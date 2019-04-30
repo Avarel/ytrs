@@ -9,7 +9,7 @@ extern crate tokio;
 extern crate error_chain;
 
 #[macro_use]
-mod errors;
+mod error;
 
 mod hyper_https;
 
