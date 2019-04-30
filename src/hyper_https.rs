@@ -5,6 +5,7 @@ use futures::{future::{err, Future}, stream::Stream};
 use hyper::{Client, client::{connect::{Connect, Connected, Destination}, HttpConnector}};
 use tokio::net::TcpStream;
 use tokio_tls::{TlsConnector, TlsStream};
+use tokio::prelude::*;
 
 pub fn get_client() -> Client<HttpsConnector> {
     let tls_cx = native_tls::TlsConnector::builder().build().unwrap();
@@ -17,7 +18,7 @@ pub fn get_client() -> Client<HttpsConnector> {
 }
 
 pub fn fetch_content(url: hyper::Uri) -> impl Future<Item=String, Error=hyper::error::Error> {
-    open_stream(url)
+    get_response_async(url)
         .and_then(|res| {
             res.into_body().concat2()
         })
@@ -27,19 +28,7 @@ pub fn fetch_content(url: hyper::Uri) -> impl Future<Item=String, Error=hyper::e
 }
 
 pub async fn async_download_to_file(file_name: &str, url: hyper::Uri) -> Result<(), crate::errors::Error> {
-    use tokio::prelude::*;
-
-    let res = await!(open_stream(url))?;
-
-    if res.status() != 200 {
-        bail!("Failed to connect, status: {}", res.status());
-    } else {
-        println!("Connected! Status: {}", res.status());
-    }
-
-    let mut file = await!(tokio::fs::File::create(file_name.to_owned()))?;
-    
-    let len = res.headers().get(hyper::header::CONTENT_LENGTH).unwrap().to_str().unwrap().parse::<u64>().unwrap();
+    let (mut stream, len) = await!(open_download_stream(url))?;
 
     let pb = indicatif::ProgressBar::new(len);
             pb.enable_steady_tick(100);
@@ -47,9 +36,9 @@ pub async fn async_download_to_file(file_name: &str, url: hyper::Uri) -> Result<
                 .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
                 .progress_chars("#>-"));
 
-    let mut body = res.into_body();
+    let mut file = await!(tokio::fs::File::create(file_name.to_owned()))?;
 
-    while let Some(chunk) = await!(body.next()) {
+    while let Some(chunk) = await!(stream.next()) {
         let chunk = chunk?;
         pb.inc(chunk.len() as u64);
         await!(tokio_io::io::write_all(&mut file, chunk))?;
@@ -58,7 +47,21 @@ pub async fn async_download_to_file(file_name: &str, url: hyper::Uri) -> Result<
     Ok(())
 }
 
-pub fn open_stream(url: hyper::Uri) -> hyper::client::ResponseFuture {
+pub async fn open_download_stream(url: hyper::Uri) -> Result<(hyper::Body, u64), crate::errors::Error> {
+    let res = await!(get_response_async(url))?;
+
+    if res.status() != 200 {
+        bail!("Failed to connect, status: {}", res.status());
+    } else {
+        println!("Connected! Status: {}", res.status());
+    }
+
+    let len = res.headers().get(hyper::header::CONTENT_LENGTH).unwrap().to_str().unwrap().parse::<u64>().unwrap();
+
+    Ok((res.into_body(), len))
+}
+
+fn get_response_async(url: hyper::Uri) -> hyper::client::ResponseFuture {
     let client = get_client();
     client.get(url)
 }

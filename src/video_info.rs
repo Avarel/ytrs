@@ -10,7 +10,7 @@ pub fn get_video_info(id: &str) -> impl Future<Item=VideoInfo, Error=Error> {
 
     crate::hyper_https::fetch_content(info_url.parse().unwrap()).map(|content| {
         dump_to_file("dump2.json", &serde_json::to_string_pretty(&serde_urlencoded::from_str::<serde_json::Value>(&content).unwrap()).unwrap());
-        serde_urlencoded::from_str(&content).unwrap()
+        VideoInfo::from_json(serde_urlencoded::from_str(&content).unwrap()).unwrap()
     }).map_err(|e| e.into())
 }
 
@@ -27,68 +27,153 @@ pub fn get_id_from_string(s: &str) -> Result<String> {
     return Ok(s[start..end].to_owned())
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Debug)]
 pub struct VideoInfo {
     video_id: String,
     title: String,
-    author: String,
     length_seconds: u64,
-    thumbnail_url: String,
-    #[serde(deserialize_with = "deserialize_spec")]
-    adaptive_fmts: Vec<Format>,
-    #[serde(deserialize_with = "from_str")]
-    player_response: serde_json::Value,
+    formats: Vec<Format>,
+    details: VideoDetails
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct PlayerResponse {
-    #[serde(rename = "videoDetails")]
-    video_details: VideoDetails
+use serde_json::Value;
+use std::str::FromStr;
+impl VideoInfo {
+    fn from_json(json: Value) -> Result<Self> {
+        let context_version = json["innertube_context_client_version"]
+            .as_str()
+            .ok_or("Context client version not detected")?;
+        if context_version != "1.20190423" {
+            return Err("API context version out of date".into())
+        }
+
+        let video_id = json["video_id"].as_str().unwrap().to_owned();
+        let title = json["title"].as_str().unwrap().to_owned();
+        let length_seconds = json["length_seconds"].as_str().and_then(|s| u64::from_str(s).ok()).unwrap();
+
+        let formats = json["adaptive_fmts"]
+            .as_str()
+            .unwrap()
+            .split(',')
+            .map(|s| serde_urlencoded::from_str::<Value>(s))
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|_| "Parsing error")?
+            .iter()
+            .map(|j| Format::parse_json(j))
+            .collect::<Vec<_>>();
+
+        let player_response = json["player_response"].as_str().and_then(|s| serde_json::from_str::<Value>(s).ok()).unwrap();
+        let details = VideoDetails::parse_json(&player_response["videoDetails"]);
+
+        Ok(Self {
+            video_id,
+            title,
+            length_seconds,
+            formats,
+            details
+        })
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct VideoDetails {
-    #[serde(rename = "channelId")]
-    channel_id: String,
-    #[serde(rename = "videoId")]
-    video_id: String,
-    title: String,
-    author: String,
-    #[serde(rename = "averageRating")]
-    average_rating: f32,
-    keywords: Vec<String>,
-    #[serde(rename = "shortDescription")]
-    short_description: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(untagged)]
-pub enum FormatType {
+#[derive(Serialize, Debug)]
+#[serde(tag = "type")]
+pub enum FormatDetails {
     Video {
-        #[serde(deserialize_with = "from_str")]
         fps: u16,
         size: String,
         quality_label: String
     },
     Audio {
-        #[serde(deserialize_with = "from_str")]
         audio_channels: u8,
-        #[serde(deserialize_with = "from_str")]
         audio_sample_rate: u32
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Debug)]
 pub struct Format {
-    #[serde(deserialize_with = "from_str")]
     itag: u32,
-    #[serde(deserialize_with = "from_str")]
     bitrate: u32,
     url: String,
-    #[serde(flatten)]
-    specific: FormatType,
-    #[serde(rename = "type", deserialize_with = "deserialize_mime")]
-    mime_type: MimeType
+    extension: String,
+    codec: String,
+    details: FormatDetails
+}
+
+impl Format {
+    fn parse_json(json: &Value) -> Format {
+        let itag = json["itag"].as_str().and_then(|s| u32::from_str(s).ok()).unwrap();
+        let bitrate = json["bitrate"].as_str().and_then(|s| u32::from_str(s).ok()).unwrap();
+        let url = json["url"].as_str().unwrap().to_owned();
+        let (format_type, extension, codec) = json["type"].as_str().map(Self::parse_mime).unwrap();
+        let details = Self::parse_details(&format_type, json);
+
+        Self {
+            itag,
+            bitrate,
+            url,
+            extension,
+            codec,
+            details,
+        }
+    }
+
+    fn parse_details(format_type: &str, json: &Value) -> FormatDetails {
+        match format_type {
+            "video" => {
+                let fps = json["fps"].as_str().and_then(|s| u16::from_str(s).ok()).unwrap();
+                let size = json["size"].as_str().unwrap().to_owned();
+                let quality_label = json["quality_label"].as_str().unwrap().to_owned();
+                FormatDetails::Video {
+                    fps, size, quality_label
+                }
+            }
+            "audio" => {
+                let audio_channels = json["audio_channels"].as_str().and_then(|s| u8::from_str(s).ok()).unwrap();
+                let audio_sample_rate = json["audio_sample_rate"].as_str().and_then(|s| u32::from_str(s).ok()).unwrap();
+                FormatDetails::Audio {
+                    audio_channels, audio_sample_rate
+                }
+            }
+            _ => unreachable!()
+        }
+    }
+
+    fn parse_mime(s: &str) -> (String, String, String) {
+        let fs_index = s.find('/').unwrap();
+        let format_type = s[0..fs_index].to_owned();
+        let sc_index = s.find(';').unwrap();
+        let extension = s[fs_index + 1..sc_index].to_owned();
+        let cd_index = s.find("codecs=\"").unwrap() + 8;
+        let codec = s[cd_index..s.len() - 1].to_owned();
+        return (format_type, extension, codec);
+    }
+}
+
+#[derive(Serialize, Debug)]
+pub struct VideoDetails {
+    channel_id: String,
+    video_id: String,
+    title: String,
+    author: String,
+    keywords: Vec<String>,
+    average_rating: f32,
+    short_description: String,
+}
+
+impl VideoDetails {
+    fn parse_json(json: &Value) -> Self {
+        let channel_id = json["channelId"].as_str().unwrap().to_owned();
+        let video_id = json["videoId"].as_str().unwrap().to_owned();
+        let title = json["title"].as_str().unwrap().to_owned();
+        let author = json["author"].as_str().unwrap().to_owned();
+        let average_rating = json["averageRating"].as_f64().unwrap() as f32;
+        let keywords = serde_json::from_value::<Vec<String>>(json["keywords"].clone()).unwrap();
+        let short_description = json["shortDescription"].as_str().unwrap().to_owned();
+
+        Self {
+            channel_id, video_id, title, author, average_rating, keywords, short_description
+        }
+    }
 }
 
 pub fn dump_to_file(file_name: &str, text: &str) {
@@ -97,122 +182,6 @@ pub fn dump_to_file(file_name: &str, text: &str) {
             .write(true)
             .create(true)
             .open(file_name).unwrap();
+    file.set_len(0).unwrap();
     file.write(text.as_bytes()).unwrap();
-}
-
-#[derive(Serialize, Debug)]
-pub struct MimeType {
-    format_type: String,
-    extension: String,
-    codec: String
-}
-
-fn deserialize_mime<'de, D>(deserializer: D) -> std::result::Result<MimeType, D::Error>
-    where D: serde::de::Deserializer<'de>
-{
-    let s = String::deserialize(deserializer)?;
-    
-    let fs_index = s.find('/').unwrap();
-    let format_type = s[0..fs_index].to_owned();
-    let sc_index = s.find(';').unwrap();
-    let extension = s[fs_index + 1..sc_index].to_owned();
-    let cd_index = s.find("codecs=\"").unwrap() + 8;
-    let codec = s[cd_index..s.len() - 1].to_owned();
-    return Ok(MimeType { format_type, extension, codec });
-}
-
-// fn json_string<'de, T, D>(deserializer: D) -> std::result::Result<T, D::Error>
-//     where T: serde::de::DeserializeOwned,
-//           D: serde::de::Deserializer<'de>
-// {
-//     let s = <&str>::deserialize(deserializer)?;
-//     serde_json::from_str::<T>(s).map_err(serde::de::Error::custom)
-// }
-
-// fn urlencoded_string<'de, T, D>(deserializer: D) -> std::result::Result<T, D::Error>
-//     where T: serde::de::DeserializeOwned,
-//           D: serde::de::Deserializer<'de>
-// {
-//     let s = <&str>::deserialize(deserializer)?;
-//     serde_urlencoded::from_str::<T>(s).map_err(serde::de::Error::custom)
-// }
-
-// fn deserialize_json_string<'de, T, D>(deserializer: D) -> std::result::Result<T, D::Error>
-//     where T: serde::de::DeserializeOwned,
-//           D: serde::de::Deserializer<'de>,
-// {
-//     struct JsonStringVisitor<T> {
-//         phantom: std::marker::PhantomData<T>
-//     }
-
-//     impl<'de, T> serde::de::Visitor<'de> for JsonStringVisitor<T> where T: serde::de::DeserializeOwned {
-//         type Value = T;
-
-//         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-//             formatter.write_str("a string containing json data")
-//         }
-    
-//         fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
-//         where E: serde::de::Error
-//         {
-//             serde_json::from_str::<T>(v).map_err(E::custom)
-//         }
-//     }
-    
-//     deserializer.deserialize_any(JsonStringVisitor::<T> { phantom: std::marker::PhantomData })
-// }
-
-// fn deserialize_urlencoded_string<'de, T, D>(deserializer: D) -> std::result::Result<T, D::Error>
-//     where T: serde::de::DeserializeOwned,
-//           D: serde::de::Deserializer<'de>,
-// {
-//     struct JsonStringVisitor<T> {
-//         phantom: std::marker::PhantomData<T>
-//     }
-
-//     impl<'de, T> serde::de::Visitor<'de> for JsonStringVisitor<T> where T: serde::de::DeserializeOwned {
-//         type Value = T;
-
-//         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-//             formatter.write_str("a string containing json data")
-//         }
-    
-//         fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
-//         where E: serde::de::Error
-//         {
-//             serde_urlencoded::from_str::<T>(v).map_err(E::custom)
-//         }
-//     }
-    
-//     deserializer.deserialize_any(JsonStringVisitor::<T> { phantom: std::marker::PhantomData })
-// }
-
-fn deserialize_spec<'de, D>(deserializer: D) -> std::result::Result<Vec<Format>, D::Error>
-    where D: serde::de::Deserializer<'de>,
-{
-    struct JsonStringVisitor;
-    impl<'de> serde::de::Visitor<'de> for JsonStringVisitor {
-        type Value = Vec<Format>;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            formatter.write_str("a string containing json data")
-        }
-    
-        fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
-        where E: serde::de::Error
-        {
-            v.split(',').map(|s| serde_urlencoded::from_str(s)).collect::<std::result::Result<Vec<_>, _>>().map_err(E::custom)
-        }
-    }
-    
-    deserializer.deserialize_any(JsonStringVisitor)
-}
-
-fn from_str<'de, T, D>(deserializer: D) -> std::result::Result<T, D::Error>
-    where T: std::str::FromStr,
-          T::Err: std::fmt::Display,
-          D: serde::de::Deserializer<'de>
-{
-    let s = String::deserialize(deserializer)?;
-    T::from_str(&s).map_err(serde::de::Error::custom)
 }
