@@ -1,12 +1,11 @@
 use serde::Serialize;
-use crate::error::{ErrorKind, Result as CrateResult};
+use crate::error::Result as CrateResult;
 
 const YOUTUBE_VIDEO_INFO_URL: &str = "https://www.youtube.com/get_video_info";
 
 pub async fn get_video_info(id: &str) -> CrateResult<VideoInfo> {
     let info_url = format!("{}?video_id={}", YOUTUBE_VIDEO_INFO_URL, id);
     let content = await!(crate::hyper_https::fetch_content(info_url.parse().unwrap()))?;
-    dump_to_file("dump2.json", &serde_json::to_string_pretty(&serde_urlencoded::from_str::<serde_json::Value>(&content).unwrap()).unwrap());
     let info = VideoInfo::from_json(serde_urlencoded::from_str(&content).unwrap()).unwrap();
     Ok(info)
 }
@@ -29,31 +28,33 @@ pub fn get_id_from_string(s: &str) -> CrateResult<String> {
 #[derive(Serialize, Debug)]
 pub struct VideoInfo {
     /// Duration of the video in seconds.
-    length_seconds: u64,
+    pub length_seconds: u64,
     /// Various formats that YouTube offers for the video.
     /// Each format contains an extension, link, and more information for the specific video file.
-    formats: Vec<Format>,
+    pub formats: Vec<Format>,
     /// Detailed video information such as keywords, title, and more.
-    details: VideoDetails
+    pub details: VideoDetails
 }
 
 /// Detailed video information.
 #[derive(Serialize, Debug)]
 pub struct VideoDetails {
     /// YouTube ID for the channel of the `author`.
-    channel_id: String,
+    pub channel_id: String,
     /// The name of the channel for this video.
-    author: String,
+    pub author: String,
     /// YouTube ID for this video.
-    video_id: String,
+    pub video_id: String,
     /// The title of the video.
-    title: String,
+    pub title: String,
     /// Keywords of the video, may be empty.
-    keywords: Vec<String>,
+    pub keywords: Vec<String>,
     /// Average rating of the video.
-    average_rating: f32,
+    pub average_rating: f32,
     /// A short description of the video.
-    short_description: String,
+    pub short_description: String,
+    /// View count of the video
+    pub view_count: u64,
 }
 
 /// Specific format details, depending on if the content is a video or audio stream.
@@ -81,17 +82,17 @@ pub enum FormatDetails {
 pub struct Format {
     /// Specific YouTube identifier for this format, formats with the same `itag` should also have
     /// the same `codec`, `extension`, `bitrate`, and `details`.
-    itag: u32,
+    pub itag: u32,
     /// Bitrate of the format.
-    bitrate: u32,
+    pub bitrate: u32,
     /// The direct download link for the file.
-    url: String,
+    pub url: String,
     /// The extension of the file.
-    extension: String,
+    pub extension: String,
     /// Encoding standard.
-    codec: String,
+    pub codec: String,
     /// Specific format details.
-    details: FormatDetails
+    pub details: FormatDetails
 }
 
 use serde_json::Value;
@@ -127,6 +128,12 @@ impl VideoInfo {
 }
 
 impl Format {
+    /// Get the download interface foor a video information.
+    // #[cfg(feature + "download")]
+    pub fn download(&self) -> crate::download::DownloadFormat {
+        crate::download::DownloadFormat { format: &self }
+    }
+
     #[doc(hidden)]
     fn parse_json(json: &Value) -> CrateResult<Format> {
         let itag = parse_str(json, "itag", u32::from_str)?;
@@ -187,6 +194,7 @@ impl VideoDetails {
         let title = find_string(json, "title")?;
         let author = find_string(json, "author")?;
         let average_rating = json["averageRating"].as_f64().ok_or("Missing field \"averageRating\"")? as f32;
+        let view_count = parse_str(json, "viewCount", u64::from_str)?;
 
         let keywords = {
             let keywords_json = json["keywords"].clone();
@@ -200,7 +208,7 @@ impl VideoDetails {
         let short_description = find_string(json, "shortDescription")?;
 
         Ok(Self {
-            channel_id, video_id, title, author, average_rating, keywords, short_description
+            channel_id, video_id, title, author, average_rating, keywords, short_description, view_count
         })
     }
 }
@@ -218,16 +226,4 @@ fn find_string(json: &Value, k: &str) -> CrateResult<String> {
 #[doc(hidden)]
 fn parse_str<T, X, F: FnOnce(&str) -> Result<T, X>>(json: &Value, k: &str, f: F) -> CrateResult<T> {
     find_str(json, k).and_then(|s| f(s).map_err(|_| "Parsing error".into()))
-}
-
-//TODO REMOVE
-#[doc(hidden)]
-pub fn dump_to_file(file_name: &str, text: &str) {
-    use std::io::Write;
-    let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(file_name).unwrap();
-    file.set_len(0).unwrap();
-    file.write(text.as_bytes()).unwrap();
 }

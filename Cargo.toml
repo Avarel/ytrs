@@ -4,15 +4,23 @@ version = "0.1.0"
 authors = ["Avarel <avarelpm@gmail.com>"]
 edition = "2018"
 
+# [[bin]]
+# name = "ytrs-cli"
+# path = "src/main.rs"
+# required-features = ["download"]
+
 [dependencies]
 futures = "0.1.17"
 hyper = "0.12"
-tokio = { version = "0.1.19", features = ["async-await-preview"] }
+tokio = { version = "0.1.19", features = ["async-await-preview", "io"] }
 tokio-tls = "0.2.1"
-tokio-io = "0.1"
 native-tls = "0.2.3"
 error-chain = "0.12"
 serde = { version = "1.0.90", features = ["derive"] }
 serde_json = "1.0"
 serde_urlencoded = "0.5.1"
-indicatif = "0.11.0"
+indicatif = { version = "0.11.0" }
+
+[features]
+
+download = []

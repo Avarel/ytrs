@@ -1,0 +1,4 @@
+{
+    "rust.build_bin": true,
+    "rust.build_lib": true
+}
