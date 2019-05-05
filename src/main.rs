@@ -35,10 +35,6 @@ async fn run_cli() -> error::Result<()> {
             
             let info = await!(video_info::get_video_info(&id)).unwrap();
             print_info(&info);
-            println!("{:>5}: {:5} | {:<10} | {:<15} | {:<10} | ", "index", "itag", "bitrate", "codec", "extension");
-            for (i, format) in info.formats.iter().enumerate() {
-                print_format(i, format);
-            }
             println!("Type the index that you want to download to the current directory.");
 
             let std_in = std::io::stdin();
@@ -103,6 +99,12 @@ fn print_info(info: &VideoInfo) {
     println!("author = {}", info.details.author);
     println!("duration = {} seconds", info.length_seconds);
     println!("views = {}", info.details.view_count);
+
+    println!("\n[video.downloads]");
+    println!("{:>5}: {:>5} | {:<10} | {:<15} | {:<10} | ", "index", "itag", "bitrate", "codec", "extension");
+    for (i, format) in info.formats.iter().enumerate() {
+        print_format(i, format);
+    }
 }
 
 fn print_format(index: usize, format: &Format) {
