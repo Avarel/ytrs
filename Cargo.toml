@@ -5,7 +5,7 @@ authors = ["Avarel <avarelpm@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-futures = "0.1.17"
+futures = "0.1.28"
 hyper = "0.12"
 tokio = { version = "0.1.19", features = ["async-await-preview"] }
 tokio-tls = "0.2.1"
