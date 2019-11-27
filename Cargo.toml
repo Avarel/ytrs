@@ -8,7 +8,7 @@ edition = "2018"
 futures = "0.1.17"
 hyper = "0.12"
 tokio = { version = "0.1.19", features = ["async-await-preview"] }
-tokio-tls = "0.2.1"
+tokio-tls = "0.3.0"
 native-tls = "0.2.3"
 error-chain = "0.12"
 serde = { version = "1.0.90", features = ["derive"] }
